@@ -18,9 +18,21 @@ async def read_root():
     """
     return {"message": "Welcome to the Interpretable ML Dashboard API!"}
 
-# Placeholder for the dataset summary endpoint we will add next
-# @app.get("/dataset-summary/")
-# async def get_dataset_summary():
-#     # Logic will go here
-#     pass
+# Define the dataset summary endpoint
+@app.get("/dataset-summary/")
+async def get_dataset_summary():
+    """
+    Provides a basic summary of the dataset.
+    (Currently returns placeholder data)
+    """
+    # Placeholder data - we will replace this with real logic later
+    summary_data = {
+        "dataset_name": "RarePlanes (Placeholder)",
+        "total_images_train": 0,
+        "total_images_test": 0,
+        "total_annotations_train": 0,
+        "annotation_types": ["aircraft (Placeholder)"],
+        "image_format": "PS-RGB (Placeholder)"
+    }
+    return summary_data
 
