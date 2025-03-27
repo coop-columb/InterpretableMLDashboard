@@ -8,7 +8,7 @@ This project emphasizes best practices in software development, including versio
 
 **Current Status (as of 2025-03-26):**
 * Phase 1 (Initial Setup) Complete.
-* Phase 2 (Backend Development) In Progress: Basic API structure with FastAPI setup. Root ('/') and placeholder ('/dataset-summary/') endpoints implemented.
+* Phase 2 (Backend Development) In Progress: API endpoints defined (placeholders for ML), basic logic for /dataset-summary/, initial tests added and passing.
 
 ## Technology Stack
 
@@ -17,6 +17,7 @@ This project emphasizes best practices in software development, including versio
 * **ML:** TensorFlow (potentially others later)
 * **Interpretability:** SHAP, LIME (planned)
 * **Data Handling:** Pandas, NumPy
+* **Testing:** Pytest, HTTPX
 * **Version Control:** Git, GitHub, Git LFS
 * **Deployment (Planned):** Docker, Cloud Platform (e.g., AWS, Heroku)
 
@@ -30,18 +31,14 @@ This project emphasizes best practices in software development, including versio
 2.  **Ensure Git LFS is installed:**
     ```bash
     git lfs install
-    # Pull LFS files (if not automatically downloaded on clone/checkout)
     git lfs pull
     ```
-    *Note: The RarePlanes dataset files in `/data` are large and managed by Git LFS.*
 3.  **Create and activate a Python virtual environment:**
     ```bash
-    # Ensure you have a compatible Python version (e.g., 3.10+)
     python3 -m venv venv
-    source venv/bin/activate # On macOS/Linux
-    # On Windows: venv\Scripts\activate
+    source venv/bin/activate
     ```
-4.  **Install dependencies:**
+4.  **Install dependencies (including test dependencies):**
     ```bash
     pip install --upgrade pip
     pip install -r requirements.txt
@@ -52,10 +49,21 @@ This project emphasizes best practices in software development, including versio
 To run the FastAPI backend server for development:
 
 ```bash
-# Ensure your virtual environment is activated
 uvicorn backend.fast:app --reload --host 0.0.0.0 --port 8000
 ```
 
-You can access the API at `http://127.0.0.1:8000` and the interactive documentation (Swagger UI) at `http://127.0.0.1:8000/docs`.
+Access the API at `http://127.0.0.1:8000` and docs at `http://127.0.0.1:8000/docs`.
 
-*(More sections like Frontend Usage, Testing, Deployment will be added later)*
+## Running Tests
+
+This project uses `pytest` for backend API testing.
+
+1.  **Ensure development dependencies are installed** (including `pytest` and `httpx`) by running `pip install -r requirements.txt`.
+2.  **Run tests** from the project root directory:
+    ```bash
+    # Ensure venv is active
+    venv/bin/python -m pytest -v
+    # Or if 'python' reliably points to venv: python -m pytest -v
+    ```
+
+*(More sections like Frontend Usage, Deployment will be added later)*
