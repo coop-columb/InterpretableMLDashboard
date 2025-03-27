@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 import xml.etree.ElementTree as ET
 
-from .model import build_simple_cnn # Import the potentially modified model builder
+from .model import build_simple_cnn, MAX_BOXES # Import MAX_BOXES
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -23,6 +23,7 @@ TARGET_IMG_HEIGHT = 256
 
 # --- Helper: Load Annotations ---
 def _load_annotations(data_dir: Path) -> dict:
+    # (No changes needed here)
     logger.info(f"Loading annotation data from {data_dir}...")
     start_time = time.time(); all_annotations = {}; total_features_processed = 0; processed_anno_file_count = 0
     annotation_archive_path = data_dir / "RarePlanes_train_geojson_aircraft_tiled.tar.gz"
@@ -40,13 +41,9 @@ def _load_annotations(data_dir: Path) -> dict:
                                 if features:
                                     bboxes_for_image = []
                                     for feature in features:
-                                        try:
-                                            coords = feature['geometry']['coordinates'][0]
-                                            bboxes_for_image.append([min(p[0] for p in coords), min(p[1] for p in coords), max(p[0] for p in coords), max(p[1] for p in coords)])
-                                        except Exception: continue # Skip malformed features
-                                    if bboxes_for_image:
-                                        all_annotations.setdefault(image_id, []).extend(bboxes_for_image)
-                                        total_features_processed += len(bboxes_for_image); processed_anno_file_count += 1
+                                        try: coords = feature['geometry']['coordinates'][0]; bboxes_for_image.append([min(p[0] for p in coords), min(p[1] for p in coords), max(p[0] for p in coords), max(p[1] for p in coords)])
+                                        except Exception: continue
+                                    if bboxes_for_image: all_annotations.setdefault(image_id, []).extend(bboxes_for_image); total_features_processed += len(bboxes_for_image); processed_anno_file_count += 1
                     except Exception as inner_e: logger.warning(f"Skipping anno member {member.name}: {inner_e}")
     except Exception as e: logger.exception(f"Error processing annotation archive: {e}"); return {}
     logger.info(f"Finished anno processing in {time.time() - start_time:.2f}s. Found {total_features_processed} annos across {len(all_annotations)} images.")
@@ -54,29 +51,26 @@ def _load_annotations(data_dir: Path) -> dict:
 
 # --- Helper: Parse GeoTransform ---
 def _get_geotransform_from_xml(xml_path: Path) -> tuple[float, ...] | None:
+    # (No changes needed here)
     if not xml_path.exists(): logger.warning(f"Metadata file not found: {xml_path}"); return None
     try:
         tree = ET.parse(xml_path); root = tree.getroot(); geotransform_str = None
-        possible_paths = [".//Metadata/Item[@name='GEOTRANSFORM']", ".//GeoTransform"]
-        for path in possible_paths:
-            elem = root.find(path)
-            if elem is not None and elem.text:
-                geotransform_str = elem.text
-                break
-        if geotransform_str:
-            parts = geotransform_str.replace(',', ' ').split()
-            if len(parts) == 6: return tuple(float(p) for p in parts)
-            logger.warning(f"Could not parse GeoTransform string '{geotransform_str}' in {xml_path}")
+        possible_paths = [ ".//Metadata/Item[@name='GEOTRANSFORM']", ".//GeoTransform" ]
+        for path in possible_paths: elem = root.find(path); if elem is not None and elem.text: geotransform_str = elem.text; break
+        if geotransform_str: parts = geotransform_str.replace(',', ' ').split();
+        if len(parts) == 6: return tuple(float(p) for p in parts); logger.warning(f"Could not parse GeoTransform string '{geotransform_str}' in {xml_path}")
         else: logger.warning(f"Could not find GeoTransform metadata item in {xml_path}")
         return None
     except Exception as e: logger.error(f"Error reading GeoTransform from {xml_path}: {e}"); return None
 
 # --- Helper: Geo to Pixel ---
 def _geo_to_pixel(lon: float, lat: float, gt: tuple[float, ...]) -> tuple[float, float]|None:
+    # (No changes needed here)
     if gt is None or len(gt)!=6: return None; ulx, x_res, _, uly, _, y_res = gt
-    if x_res==0 or y_res==0: return None; return ((lon - ulx) / x_res, (lat - uly) / y_res)
+    if x_res == 0 or y_res == 0: logger.warning("Invalid GeoTransform: x_res or y_res is zero."); return None
+    x_pixel = (lon - ulx) / x_res; y_pixel = (lat - uly) / y_res; return (x_pixel, y_pixel)
 
-# --- Main Data Loading Function ---
+# --- Main Data Loading Function (Pad BBoxes, Update Signature) ---
 def load_rareplanes_data(data_dir: Path, max_items_to_process: int | None = None) -> tf.data.Dataset | None:
     all_annotations = _load_annotations(data_dir)
     if not all_annotations: return None
@@ -137,7 +131,26 @@ def load_rareplanes_data(data_dir: Path, max_items_to_process: int | None = None
 
                                 if not processed_bboxes: skipped_bbox+=len(bboxes_geo); continue
 
-                                yield image_norm, np.array(processed_bboxes, dtype=np.float32)
+                                # --- Padding Logic ---
+                                bboxes_np = np.array(processed_bboxes, dtype=np.float32)
+                                num_boxes = bboxes_np.shape[0]
+
+                                if num_boxes > MAX_BOXES:
+                                    logger.warning(f"Image {image_id} has {num_boxes} boxes, truncating to {MAX_BOXES}.")
+                                    bboxes_np = bboxes_np[:MAX_BOXES, :]
+                                    num_boxes = MAX_BOXES # Update count after truncating
+
+                                # Pad if necessary
+                                num_padding = MAX_BOXES - num_boxes
+                                if num_padding > 0:
+                                    padding = np.zeros((num_padding, 4), dtype=np.float32)
+                                    padded_bboxes = np.concatenate([bboxes_np, padding], axis=0)
+                                else:
+                                    padded_bboxes = bboxes_np # Already correct size or truncated
+                                # --- End Padding Logic ---
+
+                                # Yield padded bboxes
+                                yield image_norm, padded_bboxes
                                 yielded_count += 1
                             else: skipped_img+=1
                     except KeyError: skipped_img+=1
@@ -145,7 +158,12 @@ def load_rareplanes_data(data_dir: Path, max_items_to_process: int | None = None
         except Exception as e: logger.exception(f"Generator Error: {e}")
         finally: logger.info(f"Data generator finished. Processed: {processed_count}. Yielded: {yielded_count}. Skipped (XML): {skipped_xml}. Skipped (BBox): {skipped_bbox}. Skipped (Image): {skipped_img}.")
 
-    output_signature = (tf.TensorSpec(shape=(TARGET_IMG_HEIGHT, TARGET_IMG_WIDTH, 3), dtype=tf.float32), tf.TensorSpec(shape=(None, 4), dtype=tf.float32))
+    # --- Update Output Signature ---
+    output_signature = (
+        tf.TensorSpec(shape=(TARGET_IMG_HEIGHT, TARGET_IMG_WIDTH, 3), dtype=tf.float32),
+        tf.TensorSpec(shape=(MAX_BOXES, 4), dtype=tf.float32) # Fixed shape
+    )
+    # --- End Update ---
     max_items_arg = max_items_to_process if max_items_to_process is not None else -1
     try:
         logger.info("Creating tf.data.Dataset from generator...")
@@ -154,7 +172,7 @@ def load_rareplanes_data(data_dir: Path, max_items_to_process: int | None = None
         return tf_dataset
     except Exception as e: logger.exception(f"Failed to create tf.data.Dataset: {e}"); return None
 
-# --- Training Orchestration (Enable model.fit, Use MSE Loss) ---
+# --- Training Orchestration ---
 def start_training(data_dir: str, epochs: int = 5, batch_size: int = 32, learning_rate: float = 0.001):
     logger.info("--- Starting Model Training ---")
     logger.info(f"Parameters: epochs={epochs}, batch_size={batch_size}, lr={learning_rate}")
@@ -166,26 +184,23 @@ def start_training(data_dir: str, epochs: int = 5, batch_size: int = 32, learnin
         logger.error("Failed to create dataset. Aborting training.")
         return {"status": "Failed: Dataset creation error", "model_path": None}
 
-    # TODO: Implement proper train/validation split BEFORE shuffle/batch/prefetch
-
     buffer_size = 1000
     logger.info(f"Shuffling dataset with buffer size {buffer_size}")
     tf_dataset = tf_dataset.shuffle(buffer_size=buffer_size)
     logger.info(f"Batching dataset with batch size {batch_size}")
-    tf_dataset = tf_dataset.batch(batch_size)
+    tf_dataset = tf_dataset.batch(batch_size) # Should now work with padded bboxes
     logger.info("Applying prefetching to dataset")
     tf_dataset = tf_dataset.prefetch(tf.data.AUTOTUNE)
 
-    # Build Model (will now output 4 values)
+    # Build Model (now outputs MAX_BOXES, 4)
     input_shape=(TARGET_IMG_HEIGHT, TARGET_IMG_WIDTH, 3)
-    # num_classes is not directly used now model outputs 4 coords
-    model = build_simple_cnn(input_shape=input_shape, num_classes=4) # Pass 4 to satisfy arg, but model ignores it internally
+    model = build_simple_cnn(input_shape=input_shape, num_classes=0) # num_classes not used by model now
     model.summary(print_fn=logger.info)
 
-    # Compile Model - Use MSE loss, remove accuracy metric
+    # Compile Model - Use MSE loss
     logger.info("Compiling model with MSE loss...")
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-                  loss='mse') # Use Mean Squared Error for coordinate regression
+                  loss='mse')
 
     # Train Model
     logger.info(f"Starting model training for {epochs} epochs...")
@@ -198,7 +213,7 @@ def start_training(data_dir: str, epochs: int = 5, batch_size: int = 32, learnin
         logger.exception(f"Error during model training: {train_err}")
 
     # Save Model
-    model_save_path = MODEL_SAVE_DIR / "simple_cnn_trained_mse.keras" # New name
+    model_save_path = MODEL_SAVE_DIR / "simple_cnn_trained_mse_padded.keras" # New name
     logger.info(f"Saving model to {model_save_path}")
     try:
         model.save(model_save_path)
@@ -207,7 +222,7 @@ def start_training(data_dir: str, epochs: int = 5, batch_size: int = 32, learnin
          logger.exception(f"Error saving model: {save_err}")
 
     logger.info("--- Model Training Script Finished ---")
-    final_status = f"Training finished after {epochs} epochs (MSE loss, check logs)."
+    final_status = f"Training finished after {epochs} epochs (MSE loss, padded, check logs)."
     return {"status": final_status, "model_path": str(model_save_path)}
 
 # End of file backend/models/train.py

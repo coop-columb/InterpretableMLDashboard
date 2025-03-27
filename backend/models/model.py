@@ -3,10 +3,13 @@ import tensorflow as tf
 from tensorflow import keras
 from keras import layers
 
-def build_simple_cnn(input_shape, num_classes):
+# Define MAX_BOXES consistently (can be moved to a config later)
+MAX_BOXES = 100
+
+def build_simple_cnn(input_shape, num_classes): # num_classes arg is unused now
     """
     Builds a basic CNN model.
-    For detection, num_classes isn't quite right. We'll output 4 coords for now.
+    Modified to output a fixed number (MAX_BOXES) of bounding boxes.
     """
     model = keras.Sequential(
         [
@@ -16,14 +19,12 @@ def build_simple_cnn(input_shape, num_classes):
             layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
             layers.MaxPooling2D(pool_size=(2, 2)),
             layers.Flatten(),
-            # layers.Dropout(0.5), # Keep dropout? Maybe remove for regression. Let's remove for now.
-            # Output 4 values (e.g., ymin, xmin, ymax, xmax) instead of num_classes/1
-            layers.Dense(4, activation="sigmoid"), # Use sigmoid to keep outputs between 0 and 1
+            # Output MAX_BOXES * 4 values, then reshape
+            layers.Dense(MAX_BOXES * 4, activation="sigmoid"), # Sigmoid keeps coords 0-1
+            layers.Reshape((MAX_BOXES, 4)) # Reshape to (batch, MAX_BOXES, 4)
         ]
     )
-    print("Simple CNN model built (modified for 4 outputs).")
+    print(f"Simple CNN model built (outputting fixed {MAX_BOXES} boxes).")
     return model
 
 # TODO: Implement a proper object detection model architecture
-# (e.g., using KerasCV, TensorFlow Object Detection API, or building manually)
-
