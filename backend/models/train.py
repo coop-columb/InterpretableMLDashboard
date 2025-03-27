@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 import xml.etree.ElementTree as ET
 
-from .model import build_simple_cnn
+from .model import build_simple_cnn # Import the potentially modified model builder
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -58,7 +58,11 @@ def _get_geotransform_from_xml(xml_path: Path) -> tuple[float, ...] | None:
     try:
         tree = ET.parse(xml_path); root = tree.getroot(); geotransform_str = None
         possible_paths = [".//Metadata/Item[@name='GEOTRANSFORM']", ".//GeoTransform"]
-        for path in possible_paths: elem = root.find(path); if elem is not None and elem.text: geotransform_str = elem.text; break
+        for path in possible_paths:
+            elem = root.find(path)
+            if elem is not None and elem.text:
+                geotransform_str = elem.text
+                break
         if geotransform_str:
             parts = geotransform_str.replace(',', ' ').split()
             if len(parts) == 6: return tuple(float(p) for p in parts)
@@ -90,17 +94,17 @@ def load_rareplanes_data(data_dir: Path, max_items_to_process: int | None = None
                     processed_count += 1
                     if processed_count % 1000 == 0: logger.info(f"Generator processed {processed_count}/{len(all_annotations)} potential images...")
 
-                    xml_filename = f"{image_id}.png.aux.xml"; xml_member_name = f"./PS-RGB_tiled/{xml_filename}"; xml_path_absolute = image_metadata_dir / xml_filename
+                    xml_filename=f"{image_id}.png.aux.xml"; xml_member_name=f"./PS-RGB_tiled/{xml_filename}"; xml_path_absolute=image_metadata_dir/xml_filename
                     geotransform = None
                     try: # Try tar first
                         member_info = tar.getmember(xml_member_name)
                         with tar.extractfile(member_info) as f_xml:
-                             if f_xml:
-                                  xml_content=f_xml.read(); tree=ET.ElementTree(ET.fromstring(xml_content)); root=tree.getroot(); gt_str=None
-                                  possible_paths=[".//Metadata/Item[@name='GEOTRANSFORM']", ".//GeoTransform"];
-                                  for path in possible_paths: elem=root.find(path); if elem is not None and elem.text: gt_str=elem.text; break
-                                  if gt_str: parts=gt_str.replace(',',' ').split();
-                                  if len(parts)==6: geotransform=tuple(float(p) for p in parts)
+                            if f_xml:
+                                xml_content=f_xml.read(); tree=ET.ElementTree(ET.fromstring(xml_content)); root=tree.getroot(); gt_str=None
+                                possible_paths=[".//Metadata/Item[@name='GEOTRANSFORM']", ".//GeoTransform"];
+                                for path in possible_paths: elem = root.find(path); if elem is not None and elem.text: gt_str = elem.text; break
+                                if gt_str: parts=gt_str.replace(',',' ').split();
+                                if len(parts)==6: geotransform=tuple(float(p) for p in parts)
                     except KeyError: geotransform = _get_geotransform_from_xml(xml_path_absolute) # Try external file
                     except Exception as xml_err: logger.error(f"Error getting GeoTransform for {image_id}: {xml_err}")
 
@@ -150,7 +154,7 @@ def load_rareplanes_data(data_dir: Path, max_items_to_process: int | None = None
         return tf_dataset
     except Exception as e: logger.exception(f"Failed to create tf.data.Dataset: {e}"); return None
 
-# --- Training Orchestration (Enable model.fit) ---
+# --- Training Orchestration (Enable model.fit, Use MSE Loss) ---
 def start_training(data_dir: str, epochs: int = 5, batch_size: int = 32, learning_rate: float = 0.001):
     logger.info("--- Starting Model Training ---")
     logger.info(f"Parameters: epochs={epochs}, batch_size={batch_size}, lr={learning_rate}")
@@ -163,12 +167,6 @@ def start_training(data_dir: str, epochs: int = 5, batch_size: int = 32, learnin
         return {"status": "Failed: Dataset creation error", "model_path": None}
 
     # TODO: Implement proper train/validation split BEFORE shuffle/batch/prefetch
-    # For now, we train on the whole dataset. Need dataset size for splitting.
-    # ds_size = len(all_annotations) # Need to get this count somehow if splitting here.
-    # train_size = int(0.8 * ds_size); val_size = ds_size - train_size
-    # train_dataset = tf_dataset.take(train_size)
-    # val_dataset = tf_dataset.skip(train_size)
-    # Apply shuffle/batch/prefetch separately to train_dataset and val_dataset
 
     buffer_size = 1000
     logger.info(f"Shuffling dataset with buffer size {buffer_size}")
@@ -178,32 +176,29 @@ def start_training(data_dir: str, epochs: int = 5, batch_size: int = 32, learnin
     logger.info("Applying prefetching to dataset")
     tf_dataset = tf_dataset.prefetch(tf.data.AUTOTUNE)
 
-    # Build Model
-    input_shape=(TARGET_IMG_HEIGHT, TARGET_IMG_WIDTH, 3); num_classes=1 # Placeholder
-    model = build_simple_cnn(input_shape=input_shape, num_classes=num_classes)
+    # Build Model (will now output 4 values)
+    input_shape=(TARGET_IMG_HEIGHT, TARGET_IMG_WIDTH, 3)
+    # num_classes is not directly used now model outputs 4 coords
+    model = build_simple_cnn(input_shape=input_shape, num_classes=4) # Pass 4 to satisfy arg, but model ignores it internally
     model.summary(print_fn=logger.info)
 
-    # Compile Model
-    logger.info("Compiling model...")
+    # Compile Model - Use MSE loss, remove accuracy metric
+    logger.info("Compiling model with MSE loss...")
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-                  loss='binary_crossentropy', # Placeholder loss
-                  metrics=['accuracy']) # Placeholder metrics
+                  loss='mse') # Use Mean Squared Error for coordinate regression
 
-    # Train Model - Uncommented!
+    # Train Model
     logger.info(f"Starting model training for {epochs} epochs...")
     history = None
     try:
-        # Pass tf_dataset directly for now (no validation set)
         history = model.fit(tf_dataset, epochs=epochs)
         logger.info("Model training finished.")
         if history: logger.info(f"Training history: {history.history}")
     except Exception as train_err:
         logger.exception(f"Error during model training: {train_err}")
-        # Decide if failure here should stop the whole process or just log
-        # return {"status": "Failed: Error during model.fit", "model_path": None}
 
-    # Save Model (Optional - uncomment if needed after training)
-    model_save_path = MODEL_SAVE_DIR / "simple_cnn_trained.keras" # Changed name
+    # Save Model
+    model_save_path = MODEL_SAVE_DIR / "simple_cnn_trained_mse.keras" # New name
     logger.info(f"Saving model to {model_save_path}")
     try:
         model.save(model_save_path)
@@ -211,9 +206,8 @@ def start_training(data_dir: str, epochs: int = 5, batch_size: int = 32, learnin
     except Exception as save_err:
          logger.exception(f"Error saving model: {save_err}")
 
-
     logger.info("--- Model Training Script Finished ---")
-    final_status = f"Training finished after {epochs} epochs (check logs for details)."
+    final_status = f"Training finished after {epochs} epochs (MSE loss, check logs)."
     return {"status": final_status, "model_path": str(model_save_path)}
 
 # End of file backend/models/train.py

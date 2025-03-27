@@ -1,14 +1,12 @@
 # backend/models/model.py
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+from keras import layers
 
-def build_simple_cnn(input_shape=(256, 256, 3), num_classes=1):
+def build_simple_cnn(input_shape, num_classes):
     """
-    Builds a very simple placeholder CNN model.
-    NOTE: This is a basic structure and needs significant refinement
-          for actual object detection on RarePlanes (e.g., using pre-trained
-          models, object detection heads like RetinaNet/YOLO/Faster R-CNN).
+    Builds a basic CNN model.
+    For detection, num_classes isn't quite right. We'll output 4 coords for now.
     """
     model = keras.Sequential(
         [
@@ -18,17 +16,14 @@ def build_simple_cnn(input_shape=(256, 256, 3), num_classes=1):
             layers.Conv2D(64, kernel_size=(3, 3), activation="relu"),
             layers.MaxPooling2D(pool_size=(2, 2)),
             layers.Flatten(),
-            layers.Dropout(0.5),
-            # Placeholder output layer - needs adjustment for actual task
-            # For binary classification (plane/no plane), num_classes=1, activation='sigmoid'
-            # For object detection, the output structure is much more complex.
-            layers.Dense(num_classes, activation="sigmoid"),
+            # layers.Dropout(0.5), # Keep dropout? Maybe remove for regression. Let's remove for now.
+            # Output 4 values (e.g., ymin, xmin, ymax, xmax) instead of num_classes/1
+            layers.Dense(4, activation="sigmoid"), # Use sigmoid to keep outputs between 0 and 1
         ]
     )
-    print("Simple CNN model built (placeholder).")
-    model.summary() # Print model summary to console
+    print("Simple CNN model built (modified for 4 outputs).")
     return model
 
-# You might add functions here later for loading pre-trained models,
-# specific object detection architectures, etc.
+# TODO: Implement a proper object detection model architecture
+# (e.g., using KerasCV, TensorFlow Object Detection API, or building manually)
 
