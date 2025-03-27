@@ -11,3 +11,7 @@ tensorflow # Or tensorflow-cpu if you don't need GPU support initially
 # Add specific versions if needed, e.g., fastapi==0.100.0
 # Required for file uploads (FastAPI)
 python-multipart
+
+# Testing
+pytest
+httpx
