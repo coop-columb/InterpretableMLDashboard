@@ -1,0 +1,11 @@
+# requirements.txt
+
+fastapi
+uvicorn[standard] # Includes standard dependencies like websockets
+dash
+dash-bootstrap-components
+plotly
+pandas
+numpy
+tensorflow # Or tensorflow-cpu if you don't need GPU support initially
+# Add specific versions if needed, e.g., fastapi==0.100.0
