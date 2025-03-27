@@ -39,6 +39,7 @@ def load_rareplanes_data(data_dir: Path):
                     logger.info(f"Processing GeoJSON member: {member.name}")
                     try:
                         # Use extractfile to get a file-like object (bytes)
+                        # Use 'with' to ensure the file object is closed
                         with tar.extractfile(member) as f:
                             if f is not None:
                                 content_bytes = f.read()
@@ -60,9 +61,10 @@ def load_rareplanes_data(data_dir: Path):
                     except json.JSONDecodeError as json_err:
                         logger.error(f"  - Error decoding JSON from {member.name}: {json_err}")
                         # Decide whether to continue or stop if one file fails
+                        break # Stop on first error for now
                     except Exception as inner_e:
                          logger.exception(f"  - Error processing member {member.name}: {inner_e}")
-                         # Decide whether to continue or stop
+                         break # Stop on first error for now
 
             if not annotations_loaded:
                  logger.warning("No GeoJSON files were successfully processed in the archive.")
