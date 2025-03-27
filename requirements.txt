@@ -15,3 +15,6 @@ python-multipart
 # Testing
 pytest
 httpx
+
+# Frontend / API Communication
+requests
